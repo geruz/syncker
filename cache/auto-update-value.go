@@ -1,36 +1,37 @@
 package cache
 
 import (
-	"time"
 	"sync"
+	"time"
 )
 
-type ValueProvider func(interface{}) (interface{})
+type ValueProvider func(interface{}) interface{}
 
 type AutoValue struct {
-	value 	 interface{}
+	value    interface{}
 	provider ValueProvider
 	nextIter chan struct{}
-	sleep 	 time.Duration
-	lock 	 *sync.Mutex
+	sleep    time.Duration
+	lock     *sync.Mutex
 }
-func NewAutoValue (provider ValueProvider, sleep time.Duration) *AutoValue{
+
+func NewAutoValue(provider ValueProvider, sleep time.Duration) *AutoValue {
 	av := &AutoValue{
-		value: nil,
+		value:    nil,
 		provider: provider,
-		sleep:sleep,
+		sleep:    sleep,
 		nextIter: make(chan struct{}),
-		lock: &sync.Mutex{},
+		lock:     &sync.Mutex{},
 	}
 	av.start()
 	return av
 }
-func(av *AutoValue) Force()  (interface{}) {
+func (av *AutoValue) Force() interface{} {
 	value := av.update()
 	av.nextIter <- struct{}{}
 	return value
 }
-func(av *AutoValue) Stop() {
+func (av *AutoValue) Stop() {
 	close(av.nextIter)
 }
 
@@ -39,30 +40,29 @@ func (av *AutoValue) Value() interface{} {
 	defer av.lock.Unlock()
 	return av.value
 }
-func (av *AutoValue) SetValue (v interface{}) {
+func (av *AutoValue) SetValue(v interface{}) {
 	av.lock.Lock()
 	defer av.lock.Unlock()
 	av.value = v
 }
 
-
-func(av *AutoValue) start() {
+func (av *AutoValue) start() {
 	av.update()
-	go func(){
+	go func() {
 		for {
 			select {
-				case <-time.After(av.sleep):
-					av.update()
-				case _, isClose := <-av.nextIter:
-					if isClose {
-						return
-					}
-					break
+			case <-time.After(av.sleep):
+				av.update()
+			case _, notEnded := <-av.nextIter:
+				if !notEnded {
+					return
+				}
+				continue
 			}
 		}
 	}()
 }
-func(av *AutoValue) update()  (interface{}) {
+func (av *AutoValue) update() interface{} {
 	value := av.provider(av.Value())
 	av.SetValue(value)
 	return value
